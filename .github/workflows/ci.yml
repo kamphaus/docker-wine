@@ -153,3 +153,17 @@ jobs:
           cluster_name: kind
       - name: End-to-end on kind (Pod Security restricted)
         run: tests/k8s/kind-e2e.sh docker-wine:ci
+
+  example:
+    # The called workflow declares publish-job permissions; the caller must allow them even with push: false.
+    permissions:
+      contents: read
+      packages: write
+      id-token: write
+      attestations: write
+    uses: ./.github/workflows/build-derived.yml
+    with:
+      context: examples/notepadpp
+      image-name: ghcr.io/kamphaus/docker-wine-example-notepadpp
+      test-command: test -f "$WINEPREFIX/drive_c/Program Files/Notepad++/notepad++.exe"
+      push: false

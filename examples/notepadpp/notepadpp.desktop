@@ -1,0 +1,5 @@
+[Desktop Entry]
+Type=Application
+Name=Notepad++
+Exec=/usr/local/bin/notepadpp
+X-GNOME-Autostart-enabled=true
