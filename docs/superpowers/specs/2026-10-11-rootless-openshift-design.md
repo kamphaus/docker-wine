@@ -5,6 +5,27 @@
 - **Repos affected:** `kamphaus/docker-remote-desktop` (base image), `kamphaus/docker-wine` (Wine image, deployment, derived-image tooling)
 - **Inputs:** `claude-analysis-rdp.md` (findings R1–R12) and `claude-analysis-wine.md` (findings W1–W16), kept next to both repos
 
+## 0. Revisions
+
+**2026-10-11, during implementation planning.** These findings come from the xrdp 0.9.24, xorgxrdp 0.9.19 and pulseaudio-module-xrdp v0.8 sources and from test containers. They take precedence over the sections below.
+
+1. **xrdp runtime paths.** xrdp 0.9.24 has its socket directory (`/run/xrdp/sockdir`) and its PID file path (`/run/xrdp`) compiled in. The image therefore replaces `/run/xrdp` with a symlink to `/run/desktop/xrdp`, so everything still ends up under `/run/desktop`.
+2. **Ubuntu snapshot bootstrap.** `ubuntu:24.04` does not include `ca-certificates`, and `snapshot.ubuntu.com` is served over HTTPS. `build/apt-snapshot` therefore first installs `ca-certificates` from the regular archive, then enables the snapshot and reinstalls `ca-certificates` from it with `--allow-downgrades`.
+3. **Snapshot ownership.** docker-wine inherits the base image's `Snapshot:` configuration and has no `UBUNTU_SNAPSHOT` of its own. `snapshot-bump.yml` lives only in docker-remote-desktop, and updates every `ARG UBUNTU_SNAPSHOT=` line in that repo (including `tests/rdp-client/Dockerfile`). docker-wine picks up a new snapshot through the Renovate PR that bumps its base-image digest.
+4. **PulseAudio module.** pulseaudio-module-xrdp is not packaged for noble, so the builder stage stays. Only `module-xrdp-sink.so` and `module-xrdp-source.so` are copied into the image. The supervisor loads them through `/etc/desktop/pulse/default.pa`, so the module's autostart `.desktop` entry is not installed.
+5. **chansrv.** The image ships a reduced `/etc/xrdp/sesman.ini` containing only the `[Chansrv]` settings (`EnableFuseMount=false`) and the chansrv logging settings. chansrv reads that file; sesman itself is not installed as a service and never runs.
+6. **Screen locking.** The desktop user has no password, so no screen locker may be installed. Tests check that `xfce4-screensaver`, `light-locker`, `xscreensaver` and `gnome-screensaver` are absent. `xfce4-goodies` is dropped.
+7. **Gecko for win64.** A win64 prefix needs both the x86 and x86_64 Gecko MSIs. `addons.lock` pins `wine-gecko-<v>-x86.msi`, `wine-gecko-<v>-x86_64.msi` and `wine-mono-<v>-x86.msi`.
+8. **WineHQ key.** The armored key is committed as `winehq-archive.asc`. Its fingerprint (`D43F640145369C51D786DDEA76F1A20FF987672F`) is checked when the file is added or updated, as documented in the README, not at build time; the base image has no `gpg`.
+9. **CI supply chain.**
+   - Trivy runs from a digest-pinned `aquasec/trivy` container image instead of a third-party action, and also generates the SPDX SBOM.
+   - Provenance and SBOM attestations use `actions/attest-build-provenance` and `actions/attest-sbom` (pushed to the registry), because the tested image is pushed with `docker push` rather than by buildx.
+   - The publish job runs `cosign verify` after signing.
+10. **kubeconform.** The manifests use only core Kubernetes kinds, so kubeconform runs with its default Kubernetes schemas in `-strict` mode.
+11. **Stale state on restart.** If the container is restarted without tmpfs mounts (`/tmp` and `/run/desktop` kept in the container layer), the supervisor removes stale X lock files, sockets and PID files before starting the session components.
+12. **Seed copies are atomic.** Seeding copies the template into `$HOME/.wine.partial` and renames it to `$HOME/.wine` only when the copy is complete. A leftover `.wine.partial` is deleted on the next start. A prefix that is not owned by the runtime UID causes an error with migration instructions.
+13. **`run-local` never pulls.** It passes `--pull never` and fails with a `docker pull` hint if the image is not present locally.
+
 ## 1. Goals and decisions
 
 ### Goals
