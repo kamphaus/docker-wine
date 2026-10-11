@@ -38,4 +38,6 @@ RUN chmod 0755 /usr/local/bin/fetch-verified /usr/local/bin/wine-prefix \
  && install -d -o 1001 -g 0 -m 0775 /opt/wine /run/wine-prefix \
  && find / -xdev -perm /6000 -type f -exec chmod a-s {} +
 ENV WINEARCH=win64
+# Override the label inherited from the base image so GHCR links this package to this repo
+LABEL org.opencontainers.image.source="https://github.com/kamphaus/docker-wine"
 USER 1001
