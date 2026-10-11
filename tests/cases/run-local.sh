@@ -3,7 +3,7 @@ source "$(dirname "$0")/../lib.sh"
 name="dt-$$-runlocal"
 vol="dt-$$-runlocal-home"
 port=$((20000 + $$ % 20000))
-trap '"$RUNTIME" rm -f "$name" >/dev/null 2>&1; "$RUNTIME" volume rm -f "$vol" >/dev/null 2>&1; cleanup' EXIT
+trap '"$RUNTIME" rm -fv "$name" >/dev/null 2>&1; "$RUNTIME" volume rm -f "$vol" >/dev/null 2>&1; cleanup' EXIT
 
 "$REPO_ROOT/run-local" "$IMAGE" --name "$name" --home-volume "$vol" --port "$port" --ephemeral >/dev/null \
     || fail "run-local failed"

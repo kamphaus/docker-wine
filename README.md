@@ -24,7 +24,7 @@ docker pull ghcr.io/kamphaus/docker-wine:stable
 ./run-local ghcr.io/kamphaus/docker-wine:stable --ephemeral # fresh prefix on every start
 ```
 
-Connect an RDP client to `127.0.0.1:3389` (self-signed certificate, no password). Options: `--name`, `--home-volume`, `--port`. `run-local` never pulls images implicitly, and starts the container as uid 1001 with all capabilities dropped, `no-new-privileges` and a read-only root filesystem.
+Connect an RDP client to `127.0.0.1:3389` (self-signed certificate, no password). Options: `--name`, `--home-volume`, `--port`. `run-local` never pulls images implicitly, and starts the container as uid 1001 with all capabilities dropped, `no-new-privileges` and a read-only root filesystem. To mimic OpenShift's arbitrary uid, run the image with `--user 123456:0` (any uid with group 0; the home volume must be writable by group 0).
 
 Commands run through the entrypoint's command mode, for example `docker run --rm IMAGE wine --version`. Note that `docker exec` (and `oc exec`) bypass the entrypoint hooks, so `WINEPREFIX` is not set there in ephemeral mode: `export WINEPREFIX=/run/wine-prefix/prefix` first.
 
@@ -37,12 +37,15 @@ Manifests are in `deploy/openshift/`:
 - `overlays/example-user`: a per-user example with `namePrefix`, an `app.kubernetes.io/instance` selector label, a RoleBinding, the egress-deny component, a larger PVC and `imagePullSecrets: ghcr-pull` (for private derived images: `oc create secret docker-registry ghcr-pull ...`). Copy it for each user.
 
 ```bash
+cp -r deploy/openshift/overlays/example-user deploy/openshift/overlays/alice
+# edit overlays/alice: kustomization.yaml (namePrefix: alice-, the app.kubernetes.io/instance label)
+# and rolebinding.yaml (the subject user name)
 oc new-project wine-alice
 oc apply -k deploy/openshift/overlays/alice -n wine-alice
-scripts/oc-rdp -n wine-alice -c xfreerdp     # or -c mstsc; omit -c to connect your own client to localhost:13389
+scripts/oc-rdp -n wine-alice -c xfreerdp alice-wine-desktop   # or -c mstsc; omit -c to connect your own client to localhost:13389
 ```
 
-`scripts/oc-rdp [-n NAMESPACE] [-c xfreerdp|mstsc] [DEPLOYMENT] [LOCAL_PORT]` keeps an `oc port-forward` tunnel up (defaults: `wine-desktop`, port 13389).
+The Deployment is named `<namePrefix>wine-desktop`, so with `namePrefix: alice-` it is `alice-wine-desktop` (the PVC is `alice-wine-desktop-home`, the Role `alice-desktop-user`). `scripts/oc-rdp [-n NAMESPACE] [-c xfreerdp|mstsc] [DEPLOYMENT] [LOCAL_PORT]` keeps an `oc port-forward` tunnel up (defaults: `wine-desktop`, port 13389), so pass the prefixed name for an overlay with a prefix.
 
 **Access control.** Port-forwarding to a desktop is the only way in, and the Role `desktop-user` grants exactly that (`get`/`list` pods, `get`/`create` `pods/portforward`, `get` deployments). The built-in `edit` and `admin` roles also allow port-forwarding. The **namespace is the access boundary**: every holder of `desktop-user`, `edit` or `admin` in a namespace can open every desktop in it, so use one namespace per user.
 
@@ -52,7 +55,7 @@ scripts/oc-rdp -n wine-alice -c xfreerdp     # or -c mstsc; omit -c to connect y
 
 ## Prefix modes
 
-The Wine prefix is created at image build time as a template in `/opt/wine/prefix-template` and is never used in place (Wine refuses prefixes not owned by the running uid; the tool copies the template as the runtime uid). Images without a template (plain docker-wine) just get `$HOME/.wine`, created on demand, and ignore these variables.
+The Wine prefix is created at image build time as a template in `/opt/wine/prefix-template` and is never used in place (Wine refuses prefixes not owned by the running uid; the tool copies the template as the runtime uid). Images without a template (plain docker-wine) just get `$HOME/.wine`, created on demand, and ignore `PREFIX_MODE` (`PREFIX_UPGRADE` is still validated, so an invalid value is an error).
 
 `PREFIX_MODE`:
 
@@ -69,7 +72,7 @@ The Wine prefix is created at image build time as a template in `/opt/wine/prefi
 | `reseed` | Keep the old prefix as `$HOME/.wine.bak-<old version>` (sanitised) and seed a new one from the template. |
 | `keep` | Keep using the old prefix and log a warning. |
 
-Any other value of either variable is an error. User files persist across reseeds because Documents, Desktop and Downloads point into `$HOME`.
+Any other value of either variable is an error. Only Documents, Desktop and Downloads persist across a reseed (they point into `$HOME`); everything else in the old prefix stays in the backup. A reseed replaces an existing `.wine.bak-<old>` of the same name, and leaving `PREFIX_UPGRADE=reseed` set accumulates backups of every version change, so unset it after the upgrade. In ephemeral mode everything except those folders is lost at every restart.
 
 ## Derived images
 
@@ -77,7 +80,7 @@ Pre-install software into the template prefix with the build tools shipped in th
 
 - `wine-prefix run -- CMD...` runs `CMD` against the template prefix under Xvfb (the first call initialises it).
 - `wine-prefix finalize` cleans temp files and caches, points the shell folders into `/home/wineuser`, makes the template group-writable and writes `$PREFIX_VERSION` into it. It fails if `PREFIX_VERSION` is unset or does not match `^[A-Za-z0-9._+-]+$`.
-- `fetch-verified LOCKFILE DESTDIR` downloads every entry of a `downloads.lock` over HTTPS and checks its SHA-256; a mismatch is fatal. Lines are `NAME VERSION URL sha256:HEX`, where `URL` may contain `{version}`; a `# renovate: datasource=... depName=...` comment above a line lets Renovate bump it (`scripts/update-downloads` refreshes the hashes).
+- `fetch-verified LOCKFILE DESTDIR` downloads every entry of a `downloads.lock` over HTTPS and checks its SHA-256; a mismatch is fatal. Lines are `NAME VERSION URL sha256:HEX`, where `URL` may contain `{version}`; a `# renovate: datasource=... depName=...` comment above a line lets Renovate bump it (`scripts/update-downloads` rehashes `sha256:pending` entries and, with `--base REF`, entries whose version changed against `REF`; all others are verified and a mismatch fails).
 - Licensed or non-public installers: `RUN --mount=type=bind,source=installers,target=/installers ...`, so they never end up in a layer.
 - Installs must be silent (`/S`, `/qn`, `winetricks -q`, `wine regedit /S file.reg`). An autostart entry is a standard `/etc/xdg/autostart/<app>.desktop`.
 
@@ -94,6 +97,7 @@ RUN --mount=type=bind,source=downloads.lock,target=/tmp/downloads.lock \
  && wine-prefix run -- wine /tmp/dl/npp-installer.exe /S \
  && wine-prefix finalize \
  && rm -rf /tmp/dl
+COPY --chmod=0755 notepadpp /usr/local/bin/notepadpp
 COPY --chmod=0644 notepadpp.desktop /etc/xdg/autostart/notepadpp.desktop
 ```
 
@@ -102,6 +106,12 @@ COPY --chmod=0644 notepadpp.desktop /etc/xdg/autostart/notepadpp.desktop
 ```yaml
 jobs:
   image:
+    # The called workflow's publish job declares these; the caller must grant them even with push: false.
+    permissions:
+      contents: read
+      packages: write
+      id-token: write
+      attestations: write
     uses: kamphaus/docker-wine/.github/workflows/build-derived.yml@<commit-sha>
     with:
       context: .
@@ -117,6 +127,11 @@ Inputs: `context` (default `.`), `image-name` (required), `test-command` (run in
 ```json
 { "extends": ["github>kamphaus/docker-wine//renovate/preset"] }
 ```
+
+## Accepted risks of derived images
+
+- Signatures and provenance attestations are written to the public Sigstore/Rekor transparency log, which exposes the image name and digest even for private images.
+- The ephemeral prefix `emptyDir` has no size limit, so a runaway prefix fills the node's disk. Set a `sizeLimit` (or a quota) on multi-tenant clusters.
 
 ## Updating the WineHQ key
 
@@ -144,7 +159,7 @@ docker run --rm --user 0 --entrypoint chown -v winehome:/home/wineuser \
 
 ```bash
 ./build -q                                    # builds docker-wine:local
-tests/run docker-wine:local                   # all 16 cases in tests/cases (or: tests/run IMAGE tests/cases/NAME.sh ...)
+tests/run docker-wine:local                   # all cases in tests/cases (or: tests/run IMAGE tests/cases/NAME.sh ...)
 tests/manifests/validate                      # needs kubectl, docker, python3 + PyYAML
 tests/k8s/kind-e2e.sh docker-wine:local       # needs kind and a native Linux Docker host
 ```

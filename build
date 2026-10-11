@@ -5,4 +5,4 @@ set -euo pipefail
 cd "$(dirname "$0")"
 args=()
 [ -z "${BASE_IMAGE:-}" ] || args+=(--build-arg "BASE_IMAGE=$BASE_IMAGE")
-docker build "${args[@]}" "$@" -t docker-wine:local .
+docker build ${args[@]+"${args[@]}"} "$@" -t docker-wine:local .

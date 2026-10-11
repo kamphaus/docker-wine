@@ -51,7 +51,7 @@ jobs:
           compression-level: 0
 
   publish:
-    needs: build-test
+    needs: [build-test, manifests, example]
     if: github.ref == 'refs/heads/master' && github.event_name != 'pull_request'
     runs-on: ubuntu-24.04
     timeout-minutes: 30
@@ -130,12 +130,14 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+      - name: Ensure PyYAML
+        run: python3 -c 'import yaml' || sudo apt-get install -y python3-yaml
       - name: Validate manifests
         run: tests/manifests/validate
 
   kind:
     needs: build-test
-    if: github.event_name == 'pull_request'
+    if: github.event_name != 'push'
     runs-on: ubuntu-24.04
     timeout-minutes: 45
     steps:

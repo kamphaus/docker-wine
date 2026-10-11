@@ -6,6 +6,8 @@ KUBECONFORM=ghcr.io/yannh/kubeconform:v0.8.0@sha256:faffaf43f95aa6425306e1ab8d6f
 
 fail() { echo "FAIL [manifests]: $*" >&2; exit 1; }
 
+python3 -c 'import yaml' 2>/dev/null || fail "python3 PyYAML is required (apt install python3-yaml / pip install pyyaml)"
+
 for dir in deploy/openshift/base deploy/openshift/overlays/example-user tests/k8s/overlay; do
     kubectl kustomize "$dir" | docker run --rm -i "$KUBECONFORM" -strict -summary - || fail "$dir does not validate"
 done
