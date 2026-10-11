@@ -12,3 +12,4 @@ resources:
 images:
   - name: ghcr.io/kamphaus/docker-wine
     newTag: stable
+    digest: sha256:e26b3c16126896d11c405c81892b334ab787b4193c5f8fbd4a09bdc565d38ae6
