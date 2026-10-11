@@ -259,7 +259,7 @@ COPY notepadpp.desktop /etc/xdg/autostart/
 
 ### 5.2 Runtime: the `/etc/desktop/init.d/50-wine-prefix.sh` hook
 
-- **No template present** (plain docker-wine): export `WINEPREFIX=$HOME/.wine`; Wine creates the prefix on first use. `PREFIX_MODE` is ignored.
+- **No template present** (plain docker-wine): the hook creates an empty prefix directory owned by the runtime uid and Wine initialises it on first use: `$HOME/.wine` with `PREFIX_MODE=seed`, a fresh `/run/wine-prefix/prefix` on every start with `PREFIX_MODE=ephemeral`. `PREFIX_UPGRADE` does not apply. (Revised after implementation: `PREFIX_MODE` was originally ignored here, which made `run-local --ephemeral` a no-op on the plain image.)
 - **`PREFIX_MODE=seed`** (default). The prefix is `$HOME/.wine`.
   - If it is missing: `cp -a --no-preserve=ownership` the template into it, so the files are owned by the runtime UID.
   - If its `.prefix-version` equals the image's version: use it.

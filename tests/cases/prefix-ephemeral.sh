@@ -8,4 +8,10 @@ out=$(run_cmd -e PREFIX_MODE=ephemeral -v /run/wine-prefix "$img" bash -c \
 
 out=$(run_cmd -e PREFIX_MODE=ephemeral "$img" true 2>&1) && fail "ephemeral mode started without a writable /run/wine-prefix"
 grep -q "/run/wine-prefix is not writable" <<<"$out" || fail "unexpected output: $out"
+# Plain docker-wine (no template): ephemeral mode gives an empty, uid-owned prefix that Wine initialises
+out=$(run_cmd -e PREFIX_MODE=ephemeral -v /run/wine-prefix "$IMAGE" bash -c \
+    'echo "$WINEPREFIX"; ls -A "$WINEPREFIX" | wc -l; xvfb-run -a wine cmd /c ver 2>/dev/null' 2>/dev/null)
+[ "$(sed -n 1p <<<"$out")" = /run/wine-prefix/prefix ] || fail "plain image ephemeral WINEPREFIX: $out"
+[ "$(sed -n 2p <<<"$out")" = 0 ] || fail "plain image ephemeral prefix not empty at start: $out"
+grep -q "Microsoft Windows" <<<"$out" || fail "Wine did not initialise the plain ephemeral prefix: $out"
 pass

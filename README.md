@@ -55,14 +55,14 @@ The Deployment is named `<namePrefix>wine-desktop`, so with `namePrefix: alice-`
 
 ## Prefix modes
 
-The Wine prefix is created at image build time as a template in `/opt/wine/prefix-template` and is never used in place (Wine refuses prefixes not owned by the running uid; the tool copies the template as the runtime uid). Images without a template (plain docker-wine) just get `$HOME/.wine`, created on demand, and ignore `PREFIX_MODE` (`PREFIX_UPGRADE` is still validated, so an invalid value is an error).
+The Wine prefix is created at image build time as a template in `/opt/wine/prefix-template` and is never used in place (Wine refuses prefixes not owned by the running uid; the tool copies the template as the runtime uid). Images without a template (plain docker-wine) get an empty prefix that Wine initialises on first use: `$HOME/.wine` in seed mode, or a fresh `/run/wine-prefix/prefix` on every start in ephemeral mode. `PREFIX_UPGRADE` does not apply to them but is still validated, so an invalid value is an error.
 
 `PREFIX_MODE`:
 
 | Value | Behaviour |
 |---|---|
 | `seed` (default) | The prefix is `$HOME/.wine` on the persistent home volume. If missing it is copied from the template into `$HOME/.wine.partial` and renamed when complete (a leftover `.partial` is deleted at the next start). |
-| `ephemeral` | `WINEPREFIX=/run/wine-prefix/prefix`, a fresh copy of the template at every start. Needs a writable volume at `/run/wine-prefix` (an `emptyDir` on OpenShift, `-v /run/wine-prefix` with Docker; `run-local --ephemeral` does this). |
+| `ephemeral` | `WINEPREFIX=/run/wine-prefix/prefix`, recreated at every start: a fresh copy of the template (or an empty prefix on the plain image). Needs a writable volume at `/run/wine-prefix` (an `emptyDir` on OpenShift, `-v /run/wine-prefix` with Docker; `run-local --ephemeral` does this). |
 
 `PREFIX_UPGRADE` applies in seed mode when the prefix's `.prefix-version` differs from the image's:
 

@@ -94,7 +94,6 @@ init_ephemeral() {
         || die "$EPHEMERAL_DIR is not writable; mount an emptyDir (OpenShift) or a volume (docker -v $EPHEMERAL_DIR) there"
     rm -rf "$EPHEMERAL_PREFIX"
     mkdir "$EPHEMERAL_PREFIX"
-    copy_template "$EPHEMERAL_PREFIX"
 }
 
 cmd_init() {
@@ -102,10 +101,20 @@ cmd_init() {
         fail | reseed | keep) ;;
         *) die "invalid PREFIX_UPGRADE '${PREFIX_UPGRADE}'; valid values: fail, reseed, keep" ;;
     esac
+    case "${PREFIX_MODE:-seed}" in
+        seed | ephemeral) ;;
+        *) die "invalid PREFIX_MODE '${PREFIX_MODE}'; valid values: seed, ephemeral" ;;
+    esac
     if [ ! -f "$TEMPLATE/.prefix-version" ]; then
-        # Plain docker-wine: Wine needs a prefix directory owned by the runtime uid
-        mkdir -p "$HOME/.wine"
-        printf '%s\n' "$HOME/.wine"
+        # Plain docker-wine: an empty prefix directory owned by the runtime uid (Wine
+        # refuses others); Wine initialises it on first use
+        if [ "${PREFIX_MODE:-seed}" = ephemeral ]; then
+            init_ephemeral
+            printf '%s\n' "$EPHEMERAL_PREFIX"
+        else
+            mkdir -p "$HOME/.wine"
+            printf '%s\n' "$HOME/.wine"
+        fi
         return 0
     fi
     local image_version folder
@@ -117,9 +126,8 @@ cmd_init() {
             printf '%s\n' "$HOME/.wine" ;;
         ephemeral)
             init_ephemeral
+            copy_template "$EPHEMERAL_PREFIX"
             printf '%s\n' "$EPHEMERAL_PREFIX" ;;
-        *)
-            die "invalid PREFIX_MODE '${PREFIX_MODE}'; valid values: seed, ephemeral" ;;
     esac
 }
 
