@@ -28,6 +28,15 @@ fi
 
 scripts/oc-rdp -n "$ns" wine-desktop 13389 >/dev/null 2>&1 &
 tunnel=$!
+up=no
+for _ in $(seq 60); do
+    if (exec 3<>/dev/tcp/127.0.0.1/13389) 2>/dev/null; then up=yes; break; fi
+    sleep 1
+done
+if [ "$up" != yes ]; then
+    echo "FAIL [kind-e2e]: port-forward on 127.0.0.1:13389 never opened" >&2
+    exit 1
+fi
 # -i --init: xfreerdp exits on stdin=/dev/null, and xvfb-run as PID 1 would never start the client
 docker run -d -i --init --name kind-e2e-client --network host desktop-test-rdp-client \
     xvfb-run -a xfreerdp /v:127.0.0.1:13389 /cert:ignore /sec:tls /u:wineuser /p:unused /sound:sys:fake +clipboard >/dev/null

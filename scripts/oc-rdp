@@ -25,7 +25,7 @@ case "$client" in
 esac
 
 cli=$(command -v oc || command -v kubectl) || { echo "oc-rdp: neither oc nor kubectl found" >&2; exit 1; }
-"$cli" "${namespace[@]}" get deployment "$deployment" >/dev/null
+"$cli" ${namespace[@]+"${namespace[@]}"} get deployment "$deployment" >/dev/null
 
 launch_client() {
     case "$client" in
@@ -39,13 +39,15 @@ pf=""
 trap '[ -z "$pf" ] || kill "$pf" 2>/dev/null' EXIT
 first=yes
 while true; do
-    "$cli" "${namespace[@]}" port-forward "deployment/$deployment" "$port:3389" &
+    "$cli" ${namespace[@]+"${namespace[@]}"} port-forward "deployment/$deployment" "$port:3389" &
     pf=$!
     if [ "$first" = yes ]; then
+        up=no
         for _ in $(seq 30); do
-            (exec 3<>"/dev/tcp/127.0.0.1/$port") 2>/dev/null && break
+            if (exec 3<>"/dev/tcp/127.0.0.1/$port") 2>/dev/null; then up=yes; break; fi
             sleep 1
         done
+        [ "$up" = yes ] || echo "oc-rdp: warning: tunnel on port $port did not open within 30s; launching client anyway" >&2
         launch_client
         first=no
     fi

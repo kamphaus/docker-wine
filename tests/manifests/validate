@@ -19,6 +19,29 @@ for want in 'automountServiceAccountToken: false' 'enableServiceLinks: false' 'a
     grep -qF -- "$want" <<<"$base" || fail "base is missing '$want'"
 done
 ! grep -q 'runAsUser:' <<<"$base" || fail "base must let the SCC assign runAsUser"
+
+# The deny-ingress policy must select the Deployment's pods (podSelector labels a subset of the pod template labels).
+check_selectors() {
+    python3 -c '
+import sys, yaml
+docs = [d for d in yaml.safe_load_all(sys.stdin) if d]
+dep = next(d for d in docs if d["kind"] == "Deployment")
+tmpl = dep["spec"]["template"]["metadata"]["labels"]
+sel = dep["spec"]["selector"]["matchLabels"]
+assert sel.items() <= tmpl.items(), "Deployment selector does not match its pod template"
+nps = [d for d in docs if d["kind"] == "NetworkPolicy"]
+ing = [d for d in nps if "Ingress" in d["spec"].get("policyTypes", []) and not d["spec"].get("ingress")]
+assert ing, "no deny-ingress NetworkPolicy"
+for np in nps:
+    assert np["spec"]["podSelector"]["matchLabels"].items() <= tmpl.items(), np["metadata"]["name"] + " does not select the Deployment pods"
+if len(sys.argv) > 1:
+    assert tmpl.get("app.kubernetes.io/instance") == sys.argv[1], "instance label missing from pod template"
+    assert sel.get("app.kubernetes.io/instance") == sys.argv[1], "instance label missing from Deployment selector"
+    pvc = next(d for d in docs if d["kind"] == "PersistentVolumeClaim")
+    assert pvc["spec"]["resources"]["requests"]["storage"] == "50Gi", "overlay PVC is not 50Gi"
+' "$@"
+}
+check_selectors <<<"$base" || fail "base selector checks"
 overlay=$(kubectl kustomize deploy/openshift/overlays/example-user)
-grep -q 'resources:$' <<<"$overlay" || fail "overlay lost resources"
+check_selectors alice <<<"$overlay" || fail "example-user overlay selector checks"
 echo "PASS [manifests]"
