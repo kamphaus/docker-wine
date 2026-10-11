@@ -152,6 +152,28 @@ Decision rules:
 - If check 1 or 2 fails on 0.9.24, the base image builds xrdp and xorgxrdp from a pinned 0.10.x tag and commit in a builder stage, using the same pinning pattern as pulseaudio-module-xrdp (Section 6).
 - If check 3 fails, `/var/lib/xkb` is made group-0 writable, and `readOnlyRootFilesystem` is dropped from the OpenShift manifest and from `run-local`.
 
+#### M0 results (2026-10-11)
+
+Spike: ubuntu:24.04 with xrdp 0.9.24-4ubuntu0.1 and xorgxrdp 1:0.9.19-1, run as `--user 123456:0 --read-only --cap-drop ALL --security-opt no-new-privileges` with tmpfs on `/tmp`, `/run/desktop` and `/home/wineuser`. Client: FreeRDP 2 (`xfreerdp /sec:tls /sound:sys:fake +clipboard`) in a second container sharing the network namespace.
+
+- Direct connect + `chansrvport` on xrdp 0.9.24-4: **works**, after one required config fix (see Notes for Task 4). Evidence: `lib_mod_log_peer: xrdp_pid=122 connected to X11rdp_pid=10 X11rdp_uid=123456 X11rdp_gid=0 client_ip=127.0.0.1`; `grep -c 'connected to X11rdp_pid'` returned 1 per connection (2 after the second client); xrdp-chansrv.10.log shows `Socket 12: AF_UNIX connection received` and `sound_process_output_format` / `sound_process_training: round trip time 1`; `xrdp_chansrv_socket_10` and later `xrdp_chansrv_audio_in_socket_10` / `xrdp_chansrv_audio_out_socket_10` appear in the socket dir. No sesman process exists.
+- Runtime paths under `/run/desktop` via the `/run/xrdp` symlink: **works**. Evidence: `/run/xrdp/sockdir/` listing (owner 123456:root) contains `xrdp_display_10`, `xrdp_disconnect_display_10`, `xrdpapi_10`, `xrdp_chansrv_socket_10`, `xrdp_chansrv_audio_in_socket_10`, `xrdp_chansrv_audio_out_socket_10`; `-config xrdp.ini` placed under `/run/desktop`, log in `/run/desktop/log/xrdp.log`. The chansrv socket path `/run/xrdp/sockdir/xrdp_chansrv_socket_%d` is compiled in. No `xrdp.pid` is written with `--nodaemon` (the expected `/run/xrdp/xrdp.pid` does not exist); nothing else needed it. No permission errors in `xrdp.log` or `xrdp-chansrv.10.log`.
+- Read-only root (xkb): **supported**. Evidence: `grep -i -E 'xkb|keymap|xkm' Xorg.log` returned nothing; no `Failed to compile keymap` / `Couldn't open compiled keymap`; xkbcomp printed only `Could not resolve keysym XF86...` warnings ("Errors from xkbcomp are not fatal"); `xrdpKeyboard` loaded and Xorg stayed up while `/var/lib/xkb` was read-only (root-owned, only README.compiled). Not verified: actual key input from a client.
+- `autorun=Desktop` with `username=na`: login screen **skipped**. The client logged in with `/u:wineuser /p:unused` and went straight to `connected ok` / `lib_mod_connect: connecting via UNIX socket`.
+- FreeRDP `/sound:sys:fake` opens the audio channel: **yes**. Evidence: `xrdp_chansrv_audio_out_socket_10` and `xrdp_chansrv_audio_in_socket_10` appear only after the client connects; chansrv logs the three output formats (PCM 44100, PCM 22050, OPUS) and the training round trip.
+- Listeners: `/proc/net/tcp` state 0A shows exactly one: `0100007F:0D3D` (127.0.0.1:3389). `/proc/net/tcp6` shows none (with the fix below).
+- Other observations: Xorg.log contains `(EE) dbus-core: error connecting to system bus` every 10 s (no system bus; harmless). xrdp.log shows `dynamic_monitor_open_response: error` / `xrdp_rdp_recv: xrdp_channel_process failed` right after `connected ok`, but the session, audio and clipboard channels stayed up and the TCP connection remained ESTABLISHED, so it is benign in this setup (drdynvc/display-control). `dbus-launch` failed (`Could not get password database information for UID`), so xfce did not start: the arbitrary UID has no passwd entry and needs libnss-wrapper; the desktop session itself was not exercised.
+- Decision: **packaged xrdp 0.9.24** (checks 1 and 2 pass, read-only root supported, so `readOnlyRootFilesystem` stays and `/var/lib/xkb` does not need to be writable).
+
+**Notes for Task 4**
+
+- REQUIRED: `/etc/xrdp/sesman.ini` must contain `[Globals]` with `ListenAddress=127.0.0.1`. xrdp-chansrv 0.9.24 derives `UseUnixSocket` from that key only. Without it, chansrv listens on TCP 7200+display (`[::]:7210`, all interfaces, UID of the session), the unix chansrv socket is never created, and xrdp fails with `xrdp_mm_chansrv_connect: connect failed trying again...` / `error in trans_connect chan`. The brief's original sesman.ini (no `[Globals]`) fails this way.
+- `XRDP_SOCKET_PATH=/run/xrdp/sockdir` is only needed by Xorg/xorgxrdp (spike set it on the Xorg command only). xrdp and chansrv use the compiled-in `/run/xrdp/sockdir`, which is why the `/run/xrdp` -> `/run/desktop/xrdp` symlink and `mkdir -p /run/desktop/xrdp/sockdir` must exist before they start.
+- `CHANSRV_LOG_PATH=/run/desktop/log`, `DISPLAY=:10` and `XDG_RUNTIME_DIR=/run/desktop/xdg` (mode 700) are used for chansrv; all worked.
+- Do not use `--nodaemon` expecting a PID file; no `xrdp.pid` is created.
+- Test clients: `xfreerdp` inside `docker run -d` must not have stdin at `/dev/null` (it exits immediately); use `< /dev/zero` or a foreground run.
+- dbus/xfce need a passwd entry for the arbitrary UID (nss_wrapper with `LD_PRELOAD`, `NSS_WRAPPER_PASSWD`, `NSS_WRAPPER_GROUP`) before `dbus-launch`.
+
 ## 4. Deployment
 
 ### 4.1 OpenShift (`deploy/openshift/` in docker-wine, Kustomize)
