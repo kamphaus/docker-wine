@@ -1,0 +1,125 @@
+#!/usr/bin/env bash
+# Manage the Wine prefix of docker-wine based images.
+#   wine-prefix run -- CMD [ARGS...]   (build time) run CMD against the template prefix under Xvfb
+#   wine-prefix finalize               (build time) clean the template and stamp $PREFIX_VERSION
+#   wine-prefix init                   (runtime)    prepare the runtime prefix, print its path
+set -Eeuo pipefail
+
+TEMPLATE=/opt/wine/prefix-template
+EPHEMERAL_DIR=/run/wine-prefix
+EPHEMERAL_PREFIX=$EPHEMERAL_DIR/prefix
+SHELL_FOLDERS=(Documents Desktop Downloads)
+
+log() { printf 'wine-prefix: %s\n' "$*" >&2; }
+die() { log "ERROR: $*"; exit 1; }
+
+cmd_run() {
+    [ "${1:-}" != -- ] || shift
+    [ $# -gt 0 ] || die "usage: wine-prefix run -- COMMAND [ARGS...]"
+    export WINEPREFIX="$TEMPLATE"
+    if [ ! -f "$TEMPLATE/system.reg" ]; then
+        log "initialising template prefix $TEMPLATE"
+        xvfb-run -a wineboot -i
+        wineserver -w
+    fi
+    xvfb-run -a "$@"
+    wineserver -w
+}
+
+cmd_finalize() {
+    [ -n "${PREFIX_VERSION:-}" ] || die "PREFIX_VERSION must be set (for example ENV PREFIX_VERSION=myapp-1.2.3-1)"
+    [ -f "$TEMPLATE/system.reg" ] || die "no template prefix at $TEMPLATE; run 'wine-prefix run -- ...' first"
+    WINEPREFIX="$TEMPLATE" wineserver -k 2>/dev/null || true
+    rm -rf "$TEMPLATE"/drive_c/windows/temp/* "$TEMPLATE"/drive_c/users/*/Temp/* \
+        "$TEMPLATE"/drive_c/users/*/AppData/Local/Temp/* "$HOME/.cache/winetricks"
+    local users_dir folder
+    users_dir="$TEMPLATE/drive_c/users/$(id -un)"
+    mkdir -p "$users_dir"
+    for folder in "${SHELL_FOLDERS[@]}"; do
+        rm -rf "${users_dir:?}/$folder"
+        ln -s "/home/wineuser/$folder" "$users_dir/$folder"
+    done
+    printf '%s\n' "$PREFIX_VERSION" > "$TEMPLATE/.prefix-version"
+    chmod -R g=u "$TEMPLATE"
+    log "template prefix finalized as version $PREFIX_VERSION"
+}
+
+copy_template() {
+    local dest=$1 start=$SECONDS
+    cp -a --no-preserve=ownership "$TEMPLATE/." "$dest/"
+    log "copied template prefix to $dest in $((SECONDS - start))s"
+}
+
+init_seed() {
+    local target="$HOME/.wine" image_version=$1 current owner
+    rm -rf "$target.partial"
+    if [ ! -e "$target" ]; then
+        mkdir "$target.partial"
+        copy_template "$target.partial"
+        mv "$target.partial" "$target"
+        return 0
+    fi
+    owner=$(stat -c %u "$target")
+    if [ "$owner" != "$(id -u)" ]; then
+        die "$target is owned by uid $owner, but the container runs as uid $(id -u). Migrate the volume once:" \
+            "docker run --rm --user 0 --entrypoint bash -v VOLUME:/home/wineuser IMAGE -c 'chown -R $(id -u):0 /home/wineuser'"
+    fi
+    current=$(cat "$target/.prefix-version" 2>/dev/null || echo unknown)
+    [ "$current" != "$image_version" ] || return 0
+    case "${PREFIX_UPGRADE:-fail}" in
+        fail)
+            die "prefix version $current does not match image version $image_version; set PREFIX_UPGRADE=reseed or keep" ;;
+        keep)
+            log "WARNING: keeping prefix version $current although the image provides $image_version" ;;
+        reseed)
+            rm -rf "$target.bak-$current"
+            mkdir "$target.partial"
+            copy_template "$target.partial"
+            mv "$target" "$target.bak-$current"
+            mv "$target.partial" "$target"
+            log "reseeded prefix; previous prefix kept as $target.bak-$current" ;;
+    esac
+}
+
+# Wine refuses a prefix directory it does not own, so the prefix is a subdirectory
+# created here by the runtime uid (the mount point itself may belong to another uid).
+init_ephemeral() {
+    [ -d "$EPHEMERAL_DIR" ] && [ -w "$EPHEMERAL_DIR" ] \
+        || die "$EPHEMERAL_DIR is not writable; mount an emptyDir (OpenShift) or a volume (docker -v $EPHEMERAL_DIR) there"
+    rm -rf "$EPHEMERAL_PREFIX"
+    mkdir "$EPHEMERAL_PREFIX"
+    copy_template "$EPHEMERAL_PREFIX"
+}
+
+cmd_init() {
+    case "${PREFIX_UPGRADE:-fail}" in
+        fail | reseed | keep) ;;
+        *) die "invalid PREFIX_UPGRADE '${PREFIX_UPGRADE}'; valid values: fail, reseed, keep" ;;
+    esac
+    if [ ! -f "$TEMPLATE/.prefix-version" ]; then
+        # Plain docker-wine: Wine needs a prefix directory owned by the runtime uid
+        mkdir -p "$HOME/.wine"
+        printf '%s\n' "$HOME/.wine"
+        return 0
+    fi
+    local image_version folder
+    image_version=$(<"$TEMPLATE/.prefix-version")
+    for folder in "${SHELL_FOLDERS[@]}"; do mkdir -p "$HOME/$folder"; done
+    case "${PREFIX_MODE:-seed}" in
+        seed)
+            init_seed "$image_version"
+            printf '%s\n' "$HOME/.wine" ;;
+        ephemeral)
+            init_ephemeral
+            printf '%s\n' "$EPHEMERAL_PREFIX" ;;
+        *)
+            die "invalid PREFIX_MODE '${PREFIX_MODE}'; valid values: seed, ephemeral" ;;
+    esac
+}
+
+case "${1:-}" in
+    run) shift; cmd_run "$@" ;;
+    finalize) cmd_finalize ;;
+    init) cmd_init ;;
+    *) die "usage: wine-prefix run -- COMMAND... | finalize | init" ;;
+esac

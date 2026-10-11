@@ -15,17 +15,18 @@ RUN dpkg --add-architecture i386 \
       "winehq-stable=${WINE_VERSION}" "wine-stable=${WINE_VERSION}" \
       "wine-stable-amd64=${WINE_VERSION}" "wine-stable-i386:i386=${WINE_VERSION}" \
  && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
-      cabextract curl p7zip unzip winbind xauth xvfb \
+      cabextract curl libnss-wrapper:i386 p7zip unzip winbind xauth xvfb \
  && rm -rf /var/lib/apt/lists/*
 
 # renovate: datasource=github-tags depName=Winetricks/winetricks
 ARG WINETRICKS_VERSION=20260125
 ARG WINETRICKS_COMMIT=b76e1ee79ac57d7aceb384f74518fc423265810c
-ADD --chmod=0755 --checksum=sha256:431f82fc74000e6c864409f1d8fb495d696c03928808e3e8acffc45179312a7b https://raw.githubusercontent.com/Winetricks/winetricks/${WINETRICKS_COMMIT}/src/winetricks /usr/local/bin/winetricks
+ADD --chmod=0755 https://raw.githubusercontent.com/Winetricks/winetricks/${WINETRICKS_COMMIT}/src/winetricks /usr/local/bin/winetricks
 
 COPY rootfs/ /
 COPY addons.lock /tmp/addons.lock
-RUN chmod 0755 /usr/local/bin/fetch-verified \
+RUN chmod 0755 /usr/local/bin/fetch-verified /usr/local/bin/wine-prefix \
+ && chmod 0644 /etc/desktop/init.d/50-wine-prefix.sh \
  && fetch-verified /tmp/addons.lock /tmp/addons \
  && install -d /usr/share/wine/gecko /usr/share/wine/mono \
  && mv /tmp/addons/wine-gecko-* /usr/share/wine/gecko/ \

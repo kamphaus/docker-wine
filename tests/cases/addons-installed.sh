@@ -5,8 +5,7 @@ source "$(dirname "$0")/../lib.sh"
 # <windows>/{system32,syswow64}/gecko/plugin and Mono to <windows>/mono/mono-2.0.
 gecko=$(awk '$1 ~ /^wine-gecko/ {print $2; exit}' "$REPO_ROOT/addons.lock")
 run_cmd "$IMAGE" bash -c '
-    p=${WINEPREFIX:-$HOME/.wine}
-    mkdir -p "$p" &&
+    p=$WINEPREFIX
     xvfb-run -a wineboot -i >/dev/null 2>&1 && wineserver -w &&
     test -f "$p/drive_c/windows/system32/gecko/plugin/npmshtml.dll" &&
     test -f "$p/drive_c/windows/syswow64/gecko/plugin/npmshtml.dll" &&
