@@ -1,0 +1,51 @@
+name: renovate-fixup
+
+on:
+  pull_request:
+    paths:
+      - Dockerfile
+      - '**/*.lock'
+      - 'examples/**/Dockerfile'
+
+permissions:
+  contents: read
+
+jobs:
+  fixup:
+    if: startsWith(github.head_ref, 'renovate/') && github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-24.04
+    concurrency:
+      group: fixup-${{ github.head_ref }}
+      cancel-in-progress: false
+    permissions:
+      contents: write
+      actions: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.head_ref }}
+          persist-credentials: false
+      - name: Recompute add-on versions and checksums of changed entries
+        env:
+          BASE_BRANCH: ${{ github.base_ref }}
+        run: |
+          # Only entries whose version differs from the PR base are rehashed; all others are verified.
+          git fetch --no-tags --depth=1 origin "$BASE_BRANCH"
+          export BASE_REF="origin/$BASE_BRANCH"
+          scripts/update-addons
+          scripts/update-downloads
+      - name: Commit and re-run CI
+        env:
+          GH_TOKEN: ${{ github.token }}
+          BRANCH: ${{ github.head_ref }}
+        run: |
+          if git diff --quiet; then
+            echo "add-ons and checksums already up to date"
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git commit -am "build(deps): update add-on versions and download checksums"
+          git push "https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" "HEAD:$BRANCH"
+          # Commits pushed with GITHUB_TOKEN do not trigger pull_request workflows: dispatch CI explicitly.
+          gh workflow run ci.yml --ref "$BRANCH"

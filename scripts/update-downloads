@@ -1,0 +1,66 @@
+#!/usr/bin/env bash
+# Maintain the sha256 of entries in downloads.lock-format files (format: see fetch-verified).
+# Usage: scripts/update-downloads [--base REF] [LOCKFILE...]   (default: addons.lock and examples/*/downloads.lock)
+# An entry is (re)hashed only if its checksum is "sha256:pending" or, with a base ref (--base REF or
+# env BASE_REF), if its version differs from (or it is absent in) the same lock file at REF.
+# Every other entry is VERIFIED: a mismatch fails and the file is left untouched (spec 6.3).
+set -euo pipefail
+cd "$(dirname "$0")/.."
+
+base=${BASE_REF:-}
+if [ "${1:-}" = "--base" ]; then
+    [ $# -ge 2 ] || { echo "update-downloads: --base needs a ref" >&2; exit 2; }
+    base=$2
+    shift 2
+fi
+
+files=("$@")
+if [ ${#files[@]} -eq 0 ]; then
+    files=(addons.lock)
+    for f in examples/*/downloads.lock; do
+        [ -e "$f" ] && files+=("$f")
+    done
+fi
+
+tmp=$(mktemp -d)
+trap 'rm -rf "$tmp"' EXIT
+for lock in "${files[@]}"; do
+    : > "$tmp/out"
+    : > "$tmp/base"
+    if [ -n "$base" ]; then
+        rel=$(realpath -m --relative-to="$PWD" "$lock")
+        git show "$base:$rel" > "$tmp/base" 2>/dev/null || : > "$tmp/base"
+    fi
+    while IFS= read -r line || [ -n "$line" ]; do
+        line=${line%$'\r'}
+        if [[ "$line" =~ ^[[:space:]]*(#|$) ]]; then
+            printf '%s\n' "$line" >> "$tmp/out"
+            continue
+        fi
+        read -r name version url checksum <<<"$line"
+        if [ "$checksum" != "sha256:pending" ]; then
+            base_version=
+            if [ -n "$base" ]; then
+                base_version=$(awk -v n="$name" '$1 == n { print $2; exit }' "$tmp/base")
+            fi
+            if [ -z "$base" ] || { [ -n "$base_version" ] && [ "$base_version" = "$version" ]; }; then
+                verify=1
+            else
+                verify=0
+            fi
+        else
+            verify=0
+        fi
+        curl -fsSL --proto '=https' --proto-redir '=https' --retry 3 -o "$tmp/download" "${url//\{version\}/$version}"
+        sum=$(sha256sum "$tmp/download" | cut -d' ' -f1)
+        if [ "$verify" = 1 ] && [ "sha256:$sum" != "$checksum" ]; then
+            echo "update-downloads: $lock: $name $version: checksum mismatch (locked $checksum, got sha256:$sum)" >&2
+            exit 1
+        fi
+        printf '%s %s %s sha256:%s\n' "$name" "$version" "$url" "$sum" >> "$tmp/out"
+    done < "$lock"
+    if ! cmp -s "$tmp/out" "$lock"; then
+        cat "$tmp/out" > "$lock"
+        echo "updated $lock"
+    fi
+done

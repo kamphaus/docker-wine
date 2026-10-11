@@ -1,0 +1,17 @@
+# Holders of this Role (or of the built-in edit/admin roles) can open the desktop: it has no password.
+# The namespace is the access boundary: every holder of desktop-user (or edit/admin) in a namespace can reach
+# every desktop in it. Use one namespace per user.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: desktop-user
+rules:
+  - apiGroups: [""]
+    resources: [pods]
+    verbs: [get, list]
+  - apiGroups: [""]
+    resources: [pods/portforward]
+    verbs: [get, create]
+  - apiGroups: [apps]
+    resources: [deployments]
+    verbs: [get]

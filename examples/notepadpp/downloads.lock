@@ -1,0 +1,2 @@
+# renovate: datasource=github-releases depName=notepad-plus-plus/notepad-plus-plus extractVersion=^v(?<version>.+)$
+npp-installer.exe 8.9.8.1 https://github.com/notepad-plus-plus/notepad-plus-plus/releases/download/v{version}/npp.{version}.Installer.x64.exe sha256:26f3bcced788fadbac4e7e577b430ea2ce6060cf3bcad993ef4612ecd7d743da

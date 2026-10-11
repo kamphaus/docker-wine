@@ -1,0 +1,92 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: wine-desktop
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate   # the RWO home PVC cannot be attached to two pods during a rolling update
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: wine-desktop
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: wine-desktop
+    spec:
+      automountServiceAccountToken: false   # untrusted Windows binaries must not get a cluster credential
+      enableServiceLinks: false
+      nodeSelector:
+        kubernetes.io/arch: amd64
+      securityContext:
+        runAsNonRoot: true
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: desktop
+          image: ghcr.io/kamphaus/docker-wine
+          env:
+            - name: RDP_LISTEN_ADDRESS
+              value: 127.0.0.1   # reachable only through `oc port-forward`
+            - name: PREFIX_MODE
+              value: seed
+            - name: PREFIX_UPGRADE
+              value: fail
+            - name: TZ
+              value: UTC
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop:
+                - ALL
+          resources:
+            requests:
+              cpu: "2"
+              memory: 4Gi
+            limits:
+              cpu: "4"
+              memory: 8Gi
+          startupProbe:   # seeding a large prefix can take minutes
+            exec:
+              command: [/usr/local/bin/desktop, healthcheck]
+            periodSeconds: 5
+            failureThreshold: 120
+          livenessProbe:
+            exec:
+              command: [/usr/local/bin/desktop, healthcheck]
+            periodSeconds: 30
+            timeoutSeconds: 5
+            failureThreshold: 3
+          volumeMounts:
+            - name: home
+              mountPath: /home/wineuser
+            - name: shm
+              mountPath: /dev/shm
+            - name: tmp
+              mountPath: /tmp
+            - name: runtime
+              mountPath: /run/desktop
+            - name: wine-prefix
+              mountPath: /run/wine-prefix
+            - name: tls
+              mountPath: /etc/desktop/tls
+              readOnly: true
+      volumes:
+        - name: home
+          persistentVolumeClaim:
+            claimName: wine-desktop-home
+        - name: shm
+          emptyDir:
+            medium: Memory
+            sizeLimit: 1Gi
+        - name: tmp
+          emptyDir: {}
+        - name: runtime
+          emptyDir: {}
+        - name: wine-prefix
+          emptyDir: {}
+        - name: tls
+          secret:
+            secretName: wine-desktop-tls   # optional kubernetes.io/tls Secret, e.g. from cert-manager
+            optional: true

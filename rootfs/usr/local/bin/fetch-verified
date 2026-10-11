@@ -1,0 +1,42 @@
+#!/usr/bin/env bash
+# Download every entry of a downloads.lock file over HTTPS and verify its SHA-256.
+# Usage: fetch-verified LOCKFILE DESTDIR
+# Lock format, one entry per line ('#' comments and blank lines are ignored):
+#   NAME VERSION URL sha256:HEX        ({version} in NAME and URL is replaced by VERSION)
+set -euo pipefail
+
+die() { echo "fetch-verified: $*" >&2; exit 1; }
+
+[ $# -eq 2 ] || die "usage: fetch-verified LOCKFILE DESTDIR"
+lock=$1
+dest=$2
+[ -r "$lock" ] || die "cannot read $lock"
+mkdir -p "$dest"
+
+lineno=0
+count=0
+while IFS= read -r line || [ -n "$line" ]; do
+    lineno=$((lineno + 1))
+    line=${line%$'\r'}
+    [[ "$line" =~ ^[[:space:]]*(#|$) ]] && continue
+    read -r name version url checksum extra <<<"$line"
+    [ -n "$checksum" ] && [ -z "$extra" ] || die "$lock:$lineno: expected 'NAME VERSION URL sha256:HEX'"
+    name=${name//\{version\}/$version}
+    url=${url//\{version\}/$version}
+    [[ "$url" == https://* ]] || die "$lock:$lineno: only https:// URLs are allowed ($url)"
+    [[ "$checksum" =~ ^sha256:[0-9a-f]{64}$ ]] || die "$lock:$lineno: invalid checksum '$checksum'"
+    [[ "$name" != */* && "$name" != .* ]] || die "$lock:$lineno: invalid file name '$name'"
+
+    curl -fsSL --proto '=https' --proto-redir '=https' --retry 3 -o "$dest/$name.part" "$url" \
+        || { rm -f "$dest/$name.part"; die "$lock:$lineno: download failed: $url"; }
+    actual=$(sha256sum "$dest/$name.part" | cut -d' ' -f1)
+    if [ "$actual" != "${checksum#sha256:}" ]; then
+        rm -f "$dest/$name.part"
+        die "$lock:$lineno: checksum mismatch for $name: expected ${checksum#sha256:}, got $actual"
+    fi
+    mv "$dest/$name.part" "$dest/$name"
+    echo "fetch-verified: $name OK" >&2
+    count=$((count + 1))
+done < "$lock"
+
+[ "$count" -gt 0 ] || die "$lock contains no entries"

@@ -1,0 +1,33 @@
+# Example per-user desktop. The namespace is the access boundary: every holder of desktop-user (or edit/admin)
+# in a namespace can reach every desktop in it, so use one namespace per user. The instance label keeps
+# selectors distinct if several overlays ever share a namespace (overlapping Deployment selectors are unsupported).
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+namePrefix: alice-
+labels:
+  - pairs:
+      app.kubernetes.io/instance: alice
+    includeSelectors: true
+resources:
+  - ../../base
+  - rolebinding.yaml
+components:
+  - ../../components/egress-deny
+patches:
+  - target:
+      kind: PersistentVolumeClaim
+      name: wine-desktop-home
+    patch: |-
+      - op: replace
+        path: /spec/resources/requests/storage
+        value: 50Gi
+  # For private derived images, first create the pull secret in the namespace:
+  #   oc create secret docker-registry ghcr-pull --docker-server=ghcr.io --docker-username=USER --docker-password=TOKEN
+  - target:
+      kind: Deployment
+      name: wine-desktop
+    patch: |-
+      - op: add
+        path: /spec/template/spec/imagePullSecrets
+        value:
+          - name: ghcr-pull

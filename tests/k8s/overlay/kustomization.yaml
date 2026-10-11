@@ -1,0 +1,30 @@
+# Approximates OpenShift restricted-v2 on kind: Pod Security "restricted", a high arbitrary UID, GID 0.
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+namespace: desktop-e2e
+resources:
+  - namespace.yaml
+  - ../../../deploy/openshift/base
+images:
+  - name: ghcr.io/kamphaus/docker-wine
+    newName: docker-wine
+    newTag: kind-e2e
+patches:
+  - target:
+      kind: Deployment
+      name: wine-desktop
+    patch: |-
+      - op: add
+        path: /spec/template/spec/securityContext/runAsUser
+        value: 1000700000
+      - op: add
+        path: /spec/template/spec/securityContext/fsGroup
+        value: 1000700000
+      - op: add
+        path: /spec/template/spec/containers/0/imagePullPolicy
+        value: Never
+      - op: replace
+        path: /spec/template/spec/containers/0/resources
+        value:
+          requests: {cpu: 500m, memory: 1Gi}
+          limits: {cpu: "2", memory: 4Gi}

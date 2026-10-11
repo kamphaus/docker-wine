@@ -1,0 +1,63 @@
+#!/usr/bin/env bash
+# Run a docker-wine based image locally in RDP mode with hardened defaults.
+# The RDP port is published on 127.0.0.1 only; anyone who can reach it gets the desktop (no password).
+set -euo pipefail
+
+usage() {
+    cat <<'USAGE'
+Usage: run-local IMAGE [--name NAME] [--home-volume VOLUME] [--port PORT] [--ephemeral]
+
+  IMAGE                 image reference, must already be present locally (never pulled implicitly)
+  --name NAME           container name (default: docker-wine)
+  --home-volume VOLUME  volume for /home/wineuser (default: winehome)
+  --port PORT           local port on 127.0.0.1 (default: 3389)
+  --ephemeral           PREFIX_MODE=ephemeral with an anonymous volume at /run/wine-prefix
+USAGE
+}
+
+die() { echo "run-local: $*" >&2; exit 2; }
+
+[ $# -ge 1 ] || { usage >&2; exit 2; }
+case "$1" in
+    -h | --help) usage; exit 0 ;;
+    -*) usage >&2; exit 2 ;;
+esac
+image=$1
+shift
+name=docker-wine
+home_volume=winehome
+port=3389
+ephemeral=no
+while [ $# -gt 0 ]; do
+    case "$1" in
+        --name) name=${2:?--name requires a value}; shift 2 ;;
+        --name=*) name=${1#*=}; shift ;;
+        --home-volume) home_volume=${2:?--home-volume requires a value}; shift 2 ;;
+        --home-volume=*) home_volume=${1#*=}; shift ;;
+        --port) port=${2:?--port requires a value}; shift 2 ;;
+        --port=*) port=${1#*=}; shift ;;
+        --ephemeral) ephemeral=yes; shift ;;
+        -h | --help) usage; exit 0 ;;
+        *) usage >&2; die "unknown option $1" ;;
+    esac
+done
+[[ "$port" =~ ^[0-9]+$ ]] && [ "$port" -ge 1 ] && [ "$port" -le 65535 ] || die "invalid port '$port'"
+
+if command -v docker >/dev/null 2>&1; then
+    rt=docker
+elif command -v podman >/dev/null 2>&1; then
+    rt=podman
+else
+    die "neither docker nor podman found"
+fi
+"$rt" image inspect "$image" >/dev/null 2>&1 || die "image $image not found locally; pull it first: $rt pull $image"
+
+args=(run -d --name "$name" --pull never
+    --user 1001:0 --cap-drop ALL --security-opt no-new-privileges --read-only
+    --tmpfs /tmp:mode=1777 --tmpfs /run/desktop:mode=0770 --shm-size 1g
+    -v "$home_volume:/home/wineuser" -e RDP_LISTEN_ADDRESS=0.0.0.0
+    -p "127.0.0.1:$port:3389")
+[ "$ephemeral" = no ] || args+=(-e PREFIX_MODE=ephemeral -v /run/wine-prefix)
+
+"$rt" "${args[@]}" "$image"
+echo "Connect an RDP client to 127.0.0.1:$port (self-signed certificate; no password)"
