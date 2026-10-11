@@ -28,6 +28,8 @@ cmd_run() {
 
 cmd_finalize() {
     [ -n "${PREFIX_VERSION:-}" ] || die "PREFIX_VERSION must be set (for example ENV PREFIX_VERSION=myapp-1.2.3-1)"
+    [[ "$PREFIX_VERSION" =~ ^[A-Za-z0-9._+-]+$ ]] \
+        || die "PREFIX_VERSION '$PREFIX_VERSION' is invalid; allowed characters: A-Z a-z 0-9 . _ + -"
     [ -f "$TEMPLATE/system.reg" ] || die "no template prefix at $TEMPLATE; run 'wine-prefix run -- ...' first"
     WINEPREFIX="$TEMPLATE" wineserver -k 2>/dev/null || true
     rm -rf "$TEMPLATE"/drive_c/windows/temp/* "$TEMPLATE"/drive_c/users/*/Temp/* \
@@ -53,18 +55,22 @@ copy_template() {
 init_seed() {
     local target="$HOME/.wine" image_version=$1 current owner
     rm -rf "$target.partial"
-    if [ ! -e "$target" ]; then
+    if [ ! -e "$target" ] && [ ! -L "$target" ]; then
         mkdir "$target.partial"
         copy_template "$target.partial"
         mv "$target.partial" "$target"
         return 0
     fi
+    [ -d "$target" ] || die "$target is not a directory"
     owner=$(stat -c %u "$target")
     if [ "$owner" != "$(id -u)" ]; then
         die "$target is owned by uid $owner, but the container runs as uid $(id -u). Migrate the volume once:" \
             "docker run --rm --user 0 --entrypoint bash -v VOLUME:/home/wineuser IMAGE -c 'chown -R $(id -u):0 /home/wineuser'"
     fi
-    current=$(cat "$target/.prefix-version" 2>/dev/null || echo unknown)
+    # The version comes from the user volume: sanitise it before any path use
+    current=$(head -n1 "$target/.prefix-version" 2>/dev/null || true)
+    current=${current//[^A-Za-z0-9._+-]/_}
+    current=${current:-unknown}
     [ "$current" != "$image_version" ] || return 0
     case "${PREFIX_UPGRADE:-fail}" in
         fail)
@@ -72,9 +78,9 @@ init_seed() {
         keep)
             log "WARNING: keeping prefix version $current although the image provides $image_version" ;;
         reseed)
-            rm -rf "$target.bak-$current"
             mkdir "$target.partial"
             copy_template "$target.partial"
+            rm -rf "$target.bak-$current"
             mv "$target" "$target.bak-$current"
             mv "$target.partial" "$target"
             log "reseeded prefix; previous prefix kept as $target.bak-$current" ;;
