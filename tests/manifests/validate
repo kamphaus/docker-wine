@@ -1,0 +1,24 @@
+#!/usr/bin/env bash
+# Render every kustomization and validate it; assert the security-relevant fields of the base.
+set -euo pipefail
+cd "$(dirname "$0")/../.."
+KUBECONFORM=ghcr.io/yannh/kubeconform:v0.8.0@sha256:faffaf43f95aa6425306e1ab8d6fcad72acb9049158f38e574c085ea1ec0f64e
+
+fail() { echo "FAIL [manifests]: $*" >&2; exit 1; }
+
+for dir in deploy/openshift/base deploy/openshift/overlays/example-user tests/k8s/overlay; do
+    kubectl kustomize "$dir" | docker run --rm -i "$KUBECONFORM" -strict -summary - || fail "$dir does not validate"
+done
+
+base=$(kubectl kustomize deploy/openshift/base)
+! grep -q '^kind: Service$' <<<"$base" || fail "base must not contain a Service"
+! grep -q '^kind: Route$' <<<"$base" || fail "base must not contain a Route"
+for want in 'automountServiceAccountToken: false' 'enableServiceLinks: false' 'allowPrivilegeEscalation: false' \
+    'runAsNonRoot: true' 'type: RuntimeDefault' 'readOnlyRootFilesystem: true' '- ALL' 'type: Recreate' \
+    'value: 127.0.0.1' 'medium: Memory'; do
+    grep -qF -- "$want" <<<"$base" || fail "base is missing '$want'"
+done
+! grep -q 'runAsUser:' <<<"$base" || fail "base must let the SCC assign runAsUser"
+overlay=$(kubectl kustomize deploy/openshift/overlays/example-user)
+grep -q 'resources:$' <<<"$overlay" || fail "overlay lost resources"
+echo "PASS [manifests]"

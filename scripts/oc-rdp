@@ -1,0 +1,55 @@
+#!/usr/bin/env bash
+# Tunnel RDP to a wine-desktop deployment through `oc port-forward` and keep the tunnel up.
+# Usage: scripts/oc-rdp [-n NAMESPACE] [-c xfreerdp|mstsc] [DEPLOYMENT] [LOCAL_PORT]
+#   defaults: DEPLOYMENT=wine-desktop LOCAL_PORT=13389; -c launches that RDP client once the tunnel is up
+set -euo pipefail
+
+usage() { sed -n '2,4s/^# \{0,1\}//p' "$0"; }
+
+namespace=()
+client=""
+while getopts "n:c:h" opt; do
+    case $opt in
+        n) namespace=(-n "$OPTARG") ;;
+        c) client=$OPTARG ;;
+        h) usage; exit 0 ;;
+        *) usage >&2; exit 2 ;;
+    esac
+done
+shift $((OPTIND - 1))
+deployment=${1:-wine-desktop}
+port=${2:-13389}
+case "$client" in
+    "" | xfreerdp | mstsc) ;;
+    *) echo "oc-rdp: unknown client '$client' (use xfreerdp or mstsc)" >&2; exit 2 ;;
+esac
+
+cli=$(command -v oc || command -v kubectl) || { echo "oc-rdp: neither oc nor kubectl found" >&2; exit 1; }
+"$cli" "${namespace[@]}" get deployment "$deployment" >/dev/null
+
+launch_client() {
+    case "$client" in
+        "") echo "oc-rdp: connect an RDP client to localhost:$port (expect a self-signed certificate warning)" ;;
+        xfreerdp) xfreerdp /v:"localhost:$port" /cert:tofu /dynamic-resolution /sound +clipboard & ;;
+        mstsc) mstsc.exe /v:"localhost:$port" & ;;
+    esac
+}
+
+pf=""
+trap '[ -z "$pf" ] || kill "$pf" 2>/dev/null' EXIT
+first=yes
+while true; do
+    "$cli" "${namespace[@]}" port-forward "deployment/$deployment" "$port:3389" &
+    pf=$!
+    if [ "$first" = yes ]; then
+        for _ in $(seq 30); do
+            (exec 3<>"/dev/tcp/127.0.0.1/$port") 2>/dev/null && break
+            sleep 1
+        done
+        launch_client
+        first=no
+    fi
+    wait "$pf" || true
+    echo "oc-rdp: port-forward ended; reconnecting in 2s (Ctrl-C to quit)" >&2
+    sleep 2
+done

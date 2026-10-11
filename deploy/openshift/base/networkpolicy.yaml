@@ -1,0 +1,11 @@
+# Deny all ingress: `oc port-forward` reaches the pod's loopback through the kubelet and is unaffected.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: wine-desktop-deny-ingress
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: wine-desktop
+  policyTypes:
+    - Ingress

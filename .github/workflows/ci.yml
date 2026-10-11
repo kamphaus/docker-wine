@@ -21,8 +21,11 @@ env:
 jobs:
   build-test:
     runs-on: ubuntu-24.04
+    timeout-minutes: 90
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
       - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
         with:
           driver: docker
@@ -45,11 +48,13 @@ jobs:
           name: image
           path: image.tar.gz
           retention-days: 1
+          compression-level: 0
 
   publish:
     needs: build-test
     if: github.ref == 'refs/heads/master' && github.event_name != 'pull_request'
     runs-on: ubuntu-24.04
+    timeout-minutes: 30
     permissions:
       contents: read
       packages: write
@@ -57,6 +62,8 @@ jobs:
       attestations: write
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
       - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           name: image
@@ -115,3 +122,34 @@ jobs:
         run: |
           docker tag "$IMAGE_NAME:$VERSION" "$IMAGE_NAME:stable"
           docker push "$IMAGE_NAME:stable"
+
+  manifests:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Validate manifests
+        run: tests/manifests/validate
+
+  kind:
+    needs: build-test
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: image
+      - name: Load image
+        run: gunzip -c image.tar.gz | docker load
+      - uses: helm/kind-action@1544676c07bb3570fcb70166beaa07c4528fd4aa # v1.15.1
+        with:
+          version: v0.33.0
+          cluster_name: kind
+      - name: End-to-end on kind (Pod Security restricted)
+        run: tests/k8s/kind-e2e.sh docker-wine:ci

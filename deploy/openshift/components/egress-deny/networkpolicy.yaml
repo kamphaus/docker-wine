@@ -1,0 +1,23 @@
+# Deny all egress except cluster DNS. Add allow rules for license servers etc., for example:
+#   - to: [{ipBlock: {cidr: 10.20.30.40/32}}]
+#     ports: [{protocol: TCP, port: 27000}]
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: wine-desktop-egress
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: wine-desktop
+  policyTypes:
+    - Egress
+  egress:
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: openshift-dns
+      ports:
+        - protocol: UDP
+          port: 5353
+        - protocol: TCP
+          port: 5353
