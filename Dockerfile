@@ -6,7 +6,10 @@ USER 0
 # renovate: datasource=deb depName=winehq-stable registryUrl=https://dl.winehq.org/wine-builds/ubuntu?suite=noble&components=main&binaryArch=amd64 versioning=deb
 ARG WINE_VERSION=11.0.0.0~noble-1
 COPY --chmod=0644 winehq-archive.asc /etc/apt/keyrings/winehq-archive.asc
-RUN dpkg --add-architecture i386 \
+# ipp-usb (USB printer daemon, a Go binary) is only a Recommends of libsane1; it is useless in a
+# container and its bundled Go stdlib carries CVEs, so never install it.
+RUN printf '%s\n' 'Package: ipp-usb' 'Pin: release *' 'Pin-Priority: -1' > /etc/apt/preferences.d/no-ipp-usb \
+ && dpkg --add-architecture i386 \
  && printf '%s\n' 'Types: deb' 'URIs: https://dl.winehq.org/wine-builds/ubuntu' 'Suites: noble' 'Components: main' \
       'Architectures: amd64 i386' 'Signed-By: /etc/apt/keyrings/winehq-archive.asc' \
       > /etc/apt/sources.list.d/winehq.sources \
