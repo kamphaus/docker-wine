@@ -25,8 +25,13 @@ jobs:
         with:
           ref: ${{ github.head_ref }}
           persist-credentials: false
-      - name: Recompute add-on versions and checksums
+      - name: Recompute add-on versions and checksums of changed entries
+        env:
+          BASE_BRANCH: ${{ github.base_ref }}
         run: |
+          # Only entries whose version differs from the PR base are rehashed; all others are verified.
+          git fetch --no-tags --depth=1 origin "$BASE_BRANCH"
+          export BASE_REF="origin/$BASE_BRANCH"
           scripts/update-addons
           scripts/update-downloads
       - name: Commit and re-run CI
