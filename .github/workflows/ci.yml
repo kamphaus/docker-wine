@@ -155,6 +155,7 @@ jobs:
         run: tests/k8s/kind-e2e.sh docker-wine:ci
 
   example:
+    needs: build-test
     # The called workflow declares publish-job permissions; the caller must allow them even with push: false.
     permissions:
       contents: read
@@ -166,4 +167,6 @@ jobs:
       context: examples/notepadpp
       image-name: ghcr.io/kamphaus/docker-wine-example-notepadpp
       test-command: test -f "$WINEPREFIX/drive_c/Program Files/Notepad++/notepad++.exe"
+      base-image-artifact: image
+      base-image: docker-wine:ci
       push: false

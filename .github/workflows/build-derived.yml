@@ -15,6 +15,18 @@ on:
         description: Shell command run in command mode inside the image; must exit 0
         type: string
         default: 'true'
+      base-image-artifact:
+        description: Optional artifact name holding image.tar.gz (docker save, gzipped) to load before building
+        type: string
+        default: ''
+      base-image:
+        description: Optional BASE_IMAGE build-arg value (for example the locally loaded image)
+        type: string
+        default: ''
+      artifact-name:
+        description: Name of the artifact carrying the tested image to the publish job; make it unique per call
+        type: string
+        default: derived-image
       push:
         description: Push, attest and sign after the tests pass
         type: boolean
@@ -38,12 +50,21 @@ jobs:
       - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
         with:
           driver: docker
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        if: inputs.base-image-artifact != ''
+        with:
+          name: ${{ inputs.base-image-artifact }}
+          path: base-image
+      - name: Load base image
+        if: inputs.base-image-artifact != ''
+        run: gunzip -c base-image/image.tar.gz | docker load
       - name: Build
         uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
         with:
           context: ${{ inputs.context }}
           load: true
           tags: derived:ci
+          build-args: ${{ inputs.base-image != '' && format('BASE_IMAGE={0}', inputs.base-image) || '' }}
       - name: Smoke test (desktop under an arbitrary UID, then the test command)
         env:
           TEST_COMMAND: ${{ inputs.test-command }}
@@ -68,7 +89,7 @@ jobs:
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         if: inputs.push
         with:
-          name: derived-image
+          name: ${{ inputs.artifact-name }}
           path: image.tar.gz
           retention-days: 1
           compression-level: 0
@@ -88,7 +109,7 @@ jobs:
     steps:
       - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
-          name: derived-image
+          name: ${{ inputs.artifact-name }}
       - name: Load and tag
         id: tag
         run: |
@@ -134,7 +155,7 @@ jobs:
         run: |
           cosign sign --yes "$IMAGE_NAME@$DIGEST"
           cosign verify "$IMAGE_NAME@$DIGEST" \
-            --certificate-identity-regexp '^https://github.com/kamphaus/docker-wine/\.github/workflows/build-derived\.yml@' \
+            --certificate-identity-regexp '^https://github\.com/kamphaus/docker-wine/\.github/workflows/build-derived\.yml@' \
             --certificate-oidc-issuer https://token.actions.githubusercontent.com >/dev/null
       - name: Publish moving tag
         env:
