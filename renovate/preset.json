@@ -9,6 +9,7 @@
   ],
   "schedule": ["before 6am on monday"],
   "labels": ["dependencies"],
+  "gitIgnoredAuthors": ["41898282+github-actions[bot]@users.noreply.github.com"],
   "vulnerabilityAlerts": { "enabled": true },
   "customManagers": [
     {
