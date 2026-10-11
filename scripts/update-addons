@@ -1,0 +1,26 @@
+#!/usr/bin/env bash
+# Regenerate addons.lock with the Gecko/Mono versions that the pinned Wine release expects.
+# Usage: scripts/update-addons [WINE_PACKAGE_VERSION]   (default: ARG WINE_VERSION in Dockerfile)
+set -euo pipefail
+cd "$(dirname "$0")/.."
+source scripts/lib/wine-version.sh
+
+pkg=${1:-$(sed -n 's/^ARG WINE_VERSION=//p' Dockerfile)}
+[ -n "$pkg" ] || { echo "update-addons: no ARG WINE_VERSION in Dockerfile" >&2; exit 1; }
+upstream=$(upstream_wine_version "$pkg")
+addons_c=$(curl -fsSL "https://raw.githubusercontent.com/wine-mirror/wine/wine-${upstream}/dlls/appwiz.cpl/addons.c")
+gecko=$(sed -n -E 's/^#define GECKO_VERSION "([^"]+)".*/\1/p' <<<"$addons_c")
+mono=$(sed -n -E 's/^#define MONO_VERSION "([^"]+)".*/\1/p' <<<"$addons_c")
+if [ -z "$gecko" ] || [ -z "$mono" ]; then
+    echo "update-addons: could not read add-on versions for wine-${upstream}" >&2
+    exit 1
+fi
+
+base=https://dl.winehq.org/wine
+cat > addons.lock <<EOT
+# Wine add-ons required by wine-${upstream}. Regenerate with: scripts/update-addons
+wine-gecko-{version}-x86.msi ${gecko} ${base}/wine-gecko/{version}/wine-gecko-{version}-x86.msi sha256:pending
+wine-gecko-{version}-x86_64.msi ${gecko} ${base}/wine-gecko/{version}/wine-gecko-{version}-x86_64.msi sha256:pending
+wine-mono-{version}-x86.msi ${mono} ${base}/wine-mono/{version}/wine-mono-{version}-x86.msi sha256:pending
+EOT
+scripts/update-downloads addons.lock

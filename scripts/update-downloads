@@ -1,0 +1,34 @@
+#!/usr/bin/env bash
+# Recompute the sha256 of every entry in downloads.lock-format files (format: see fetch-verified).
+# Usage: scripts/update-downloads [LOCKFILE...]   (default: addons.lock and examples/*/downloads.lock)
+set -euo pipefail
+cd "$(dirname "$0")/.."
+
+files=("$@")
+if [ ${#files[@]} -eq 0 ]; then
+    files=(addons.lock)
+    for f in examples/*/downloads.lock; do
+        [ -e "$f" ] && files+=("$f")
+    done
+fi
+
+tmp=$(mktemp -d)
+trap 'rm -rf "$tmp"' EXIT
+for lock in "${files[@]}"; do
+    : > "$tmp/out"
+    while IFS= read -r line || [ -n "$line" ]; do
+        line=${line%$'\r'}
+        if [[ "$line" =~ ^[[:space:]]*(#|$) ]]; then
+            printf '%s\n' "$line" >> "$tmp/out"
+            continue
+        fi
+        read -r name version url _ <<<"$line"
+        curl -fsSL --proto '=https' --proto-redir '=https' --retry 3 -o "$tmp/download" "${url//\{version\}/$version}"
+        sum=$(sha256sum "$tmp/download" | cut -d' ' -f1)
+        printf '%s %s %s sha256:%s\n' "$name" "$version" "$url" "$sum" >> "$tmp/out"
+    done < "$lock"
+    if ! cmp -s "$tmp/out" "$lock"; then
+        cat "$tmp/out" > "$lock"
+        echo "updated $lock"
+    fi
+done
