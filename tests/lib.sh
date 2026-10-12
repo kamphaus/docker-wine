@@ -82,6 +82,6 @@ wait_healthy() {
 fixture_image() {
     local tag="desktop-test-fixture:${1:-none}"
     "$RUNTIME" build -q -t "$tag" --build-arg "BASE_IMAGE=$IMAGE" --build-arg "PREFIX_VERSION=$1" \
-        "$REPO_ROOT/tests/fixtures/derived" >/dev/null
+        "$REPO_ROOT/tests/fixtures/derived" >/dev/null || fail "could not build fixture image $tag"
     echo "$tag"
 }
