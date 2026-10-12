@@ -13,6 +13,7 @@ out=$(run_cmd -e PREFIX_MODE=bogus "$IMAGE" true 2>&1) && fail "plain image acce
 grep -q "invalid PREFIX_MODE 'bogus'; valid values: seed, ephemeral" <<<"$out" || fail "unexpected plain-image output: $out"
 
 # Plain docker-wine defaults to seed: Wine uses $HOME/.wine
-out=$(run_cmd "$IMAGE" bash -c 'echo "$WINEPREFIX"' 2>/dev/null)
+out=$(run_cmd "$IMAGE" bash -c 'echo "$WINEPREFIX"' 2>/dev/null) \
+    || fail "plain image start failed: $out"
 [ "$out" = /home/wineuser/.wine ] || fail "plain image WINEPREFIX is '$out'"
 pass
