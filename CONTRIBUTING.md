@@ -18,4 +18,4 @@ Thank you for taking an interest in docker-wine and wanting to contribute.
 
 ## Deployment of images
 
-CI (`.github/workflows/ci.yml`) builds, tests and scans the image on every push and pull request. Pushes to `master` publish the image to GHCR, with an SBOM, a provenance attestation and a cosign signature. Details on usage, pinning and updates are in the [README](README.md).
+CI (`.github/workflows/ci.yml`) builds, tests and scans the image on every push and pull request. Pushes to `main` publish the image to GHCR, with an SBOM, a provenance attestation and a cosign signature. Details on usage, pinning and updates are in the [README](README.md).
