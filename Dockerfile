@@ -1,4 +1,4 @@
-# syntax=docker/dockerfile:1
+# syntax=docker/dockerfile:1@sha256:4edf897a3ffa55b89f906fc8cc78afdb3f1834cc9c7083565e611a8a7d5fe99e
 ARG BASE_IMAGE=ghcr.io/kamphaus/docker-remote-desktop:noble@sha256:18304a93eb4325e28c4045788e84e41ee87ff806eef4c8ba827ad58f03ac8b6f
 FROM ${BASE_IMAGE}
 USER 0
