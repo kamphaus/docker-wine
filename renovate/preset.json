@@ -58,6 +58,12 @@
       "description": "Wine bumps change add-ons and behaviour: always review",
       "matchDepNames": ["winehq-stable"],
       "automerge": false
+    },
+    {
+      "description": "Temporary: the WoW64 switch reaches derived images as a docker-wine:stable digest update; review it instead of automerging. Remove once derived images have moved.",
+      "matchDepNames": ["ghcr.io/kamphaus/docker-wine"],
+      "automerge": false,
+      "prBodyNotes": ["docker-wine now runs Wine in WoW64 mode on Ubuntu 26.04 (no 32-bit Linux packages, no `wine64`, no `WINEARCH=win32`). Check the migration notes before merging: https://github.com/kamphaus/docker-wine#wow64-no-32-bit-linux-packages"]
     }
   ]
 }
