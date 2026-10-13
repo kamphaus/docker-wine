@@ -7,4 +7,5 @@ check '11.0.0.0~noble-1' 11.0
 check '10.0.0.0~noble-1' 10.0
 check '10.0.1.0~noble-1' 10.0.1
 check '10.17.0.0~noble-1' 10.17
+check '11.0.0.0~resolute-1' 11.0
 pass

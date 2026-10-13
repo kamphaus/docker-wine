@@ -128,6 +128,16 @@ Inputs: `context` (default `.`), `image-name` (required), `test-command` (run in
 { "extends": ["github>kamphaus/docker-wine//renovate/preset"] }
 ```
 
+### WoW64 (no 32-bit Linux packages)
+
+The image runs Wine in WoW64 mode on Ubuntu 26.04: a single 64-bit Wine runs both 32-bit and 64-bit Windows programs, and the image contains no i386 packages. This makes it work on hosts that cannot run 32-bit Linux programs, such as kernels without IA32 emulation or Docker 29.4.2, whose seccomp profile blocks `socketcall(2)`. When moving a derived image from the earlier Ubuntu 24.04 based image:
+
+- Call `wine`, not `wine64`; there is no `wine64` binary.
+- Remove `WINEARCH=win32`. WoW64 only supports 64-bit prefixes (`wine: WINEARCH is set to 'win32' but this is not supported in wow64 mode.`), and 32-bit programs run in them.
+- Do not install `:i386` packages; there is no i386 architecture or WineHQ i386 repository for Ubuntu 26.04.
+- Existing 64-bit prefixes (the default, `WINEARCH=win64`) in user volumes keep working; no reseed is needed for the switch itself.
+- Existing 32-bit prefixes, created with `WINEARCH=win32`, stop working: Wine fails with `wine: '/home/wineuser/.wine' is a 32-bit installation, it cannot support 64-bit applications.` A derived image that used `WINEARCH=win32` must bump `PREFIX_VERSION`, and its users start once with `PREFIX_UPGRADE=reseed`; the old prefix is kept as `$HOME/.wine.bak-<old version>` for copying data out. With plain docker-wine (no template), move `$HOME/.wine` aside (for example to `$HOME/.wine.win32`) and restart the container; it then starts with a new 64-bit prefix.
+
 ## Accepted risks of derived images
 
 - Signatures and provenance attestations are written to the public Sigstore/Rekor transparency log, which exposes the image name and digest even for private images.

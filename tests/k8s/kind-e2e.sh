@@ -44,7 +44,7 @@ docker run -d -i --init --name kind-e2e-client --network host desktop-test-rdp-c
 for _ in $(seq 60); do
     # capture first: never pipe into grep -q under pipefail
     log=$(kubectl -n "$ns" exec deployment/wine-desktop -- cat /run/desktop/log/xrdp.log 2>/dev/null || true)
-    if grep -q 'connected to X11rdp_pid' <<<"$log"; then
+    if grep -q 'connected to Xorg_pid' <<<"$log"; then
         echo "PASS [kind-e2e]"
         exit 0
     fi
