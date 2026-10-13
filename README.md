@@ -128,6 +128,15 @@ Inputs: `context` (default `.`), `image-name` (required), `test-command` (run in
 { "extends": ["github>kamphaus/docker-wine//renovate/preset"] }
 ```
 
+### WoW64 (no 32-bit Linux packages)
+
+The image runs Wine in WoW64 mode on Ubuntu 26.04: a single 64-bit Wine runs both 32-bit and 64-bit Windows programs, and the image contains no i386 packages. This makes it work on hosts that cannot run 32-bit Linux programs, such as kernels without IA32 emulation or Docker 29.4.2, whose seccomp profile blocks `socketcall(2)`. When moving a derived image from the earlier Ubuntu 24.04 based image:
+
+- Call `wine`, not `wine64`; there is no `wine64` binary.
+- Remove `WINEARCH=win32`. WoW64 only supports 64-bit prefixes (`wine: WINEARCH is set to 'win32' but this is not supported in wow64 mode.`), and 32-bit programs run in them.
+- Do not install `:i386` packages; there is no i386 architecture or WineHQ i386 repository for Ubuntu 26.04.
+- Existing prefixes in user volumes keep working; no reseed is needed for the switch itself.
+
 ## Accepted risks of derived images
 
 - Signatures and provenance attestations are written to the public Sigstore/Rekor transparency log, which exposes the image name and digest even for private images.

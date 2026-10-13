@@ -1,24 +1,24 @@
 # syntax=docker/dockerfile:1@sha256:4edf897a3ffa55b89f906fc8cc78afdb3f1834cc9c7083565e611a8a7d5fe99e
-ARG BASE_IMAGE=ghcr.io/kamphaus/docker-remote-desktop:noble@sha256:18304a93eb4325e28c4045788e84e41ee87ff806eef4c8ba827ad58f03ac8b6f
+ARG BASE_IMAGE=ghcr.io/kamphaus/docker-remote-desktop:resolute@sha256:2015266e1227b2c3fe8309b0bbcae9d20d0bff4bced80d126cb43083a61c32f8
 FROM ${BASE_IMAGE}
 USER 0
 
-# renovate: datasource=deb depName=winehq-stable registryUrl=https://dl.winehq.org/wine-builds/ubuntu?suite=noble&components=main&binaryArch=amd64 versioning=deb
-ARG WINE_VERSION=11.0.0.0~noble-1
+# renovate: datasource=deb depName=winehq-stable registryUrl=https://dl.winehq.org/wine-builds/ubuntu?suite=resolute&components=main&binaryArch=amd64 versioning=deb
+ARG WINE_VERSION=11.0.0.0~resolute-1
 COPY --chmod=0644 winehq-archive.asc /etc/apt/keyrings/winehq-archive.asc
+# WineHQ's resolute builds use Wine's WoW64 mode: one amd64 package runs 32-bit and 64-bit Windows programs,
+# so the image has no i386 (32-bit Linux) packages.
 # ipp-usb (USB printer daemon, a Go binary) is only a Recommends of libsane1; it is useless in a
 # container and its bundled Go stdlib carries CVEs, so never install it.
 RUN printf '%s\n' 'Package: ipp-usb' 'Pin: release *' 'Pin-Priority: -1' > /etc/apt/preferences.d/no-ipp-usb \
- && dpkg --add-architecture i386 \
- && printf '%s\n' 'Types: deb' 'URIs: https://dl.winehq.org/wine-builds/ubuntu' 'Suites: noble' 'Components: main' \
-      'Architectures: amd64 i386' 'Signed-By: /etc/apt/keyrings/winehq-archive.asc' \
+ && printf '%s\n' 'Types: deb' 'URIs: https://dl.winehq.org/wine-builds/ubuntu' 'Suites: resolute' 'Components: main' \
+      'Architectures: amd64' 'Signed-By: /etc/apt/keyrings/winehq-archive.asc' \
       > /etc/apt/sources.list.d/winehq.sources \
  && apt-get update \
  && DEBIAN_FRONTEND=noninteractive apt-get install -y --install-recommends \
       "winehq-stable=${WINE_VERSION}" "wine-stable=${WINE_VERSION}" \
-      "wine-stable-amd64=${WINE_VERSION}" "wine-stable-i386:i386=${WINE_VERSION}" \
  && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
-      cabextract curl libnss-wrapper:i386 p7zip unzip winbind xauth xvfb \
+      7zip cabextract curl unzip winbind xauth xvfb \
  && rm -rf /var/lib/apt/lists/*
 
 # renovate: datasource=github-tags depName=Winetricks/winetricks
