@@ -1,5 +1,5 @@
 # syntax=docker/dockerfile:1@sha256:4edf897a3ffa55b89f906fc8cc78afdb3f1834cc9c7083565e611a8a7d5fe99e
-ARG BASE_IMAGE=ghcr.io/kamphaus/docker-remote-desktop:resolute@sha256:2015266e1227b2c3fe8309b0bbcae9d20d0bff4bced80d126cb43083a61c32f8
+ARG BASE_IMAGE=ghcr.io/kamphaus/docker-remote-desktop:resolute@sha256:b9fbacf659e29cb23f5389d4b16bb6f23f134402b154a7bb472a4bcf9e540ba0
 FROM ${BASE_IMAGE}
 USER 0
 
